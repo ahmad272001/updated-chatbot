@@ -10,6 +10,7 @@ import requests
 import time
 import gspread
 from google.oauth2.service_account import Credentials
+from mongodb_operations import mongodb_manager
 
 
 print("__name__ is:", __name__)
@@ -72,105 +73,65 @@ saved_sessions = set()
 # Sign-nize Customer Support System Prompt
 SIGN_NIZE_SYSTEM_PROMPT = """You are an AI-powered Customer Support Representative for Signize, a company specializing in custom sign design and production.
 
-Your job is to gather all the required information in a friendly, conversational, and professional manner to help our team create an accurate design mockup.
+Your job is to provide excellent customer support for general signage queries and help customers get quotes/mockups when requested.
 
 Your role:
-- Ask one question at a time using a warm, professional tone.
-- Keep the chat engaging, brief, and highly customer-friendly.
-- If customer asks you as "Are you AI?", reply with "Yes, I am AI-powered Customer Support Representative.
+- Be warm, professional, and engaging—make the client feel valued.
+- Use the knowledge base to answer general signage questions about signs, mountings, materials, etc.
+- When customers mention "mockup" or "quote" AND have provided their email, trigger the quote form process.
+- If customer asks you as "Are you AI?", reply with "Yes, I am AI-powered Customer Support Representative."
 
 Knowledge Base Use:
-When users ask about our products, services, or company information, use the knowledge base to provide accurate details. All product categories are equally important.
+When users ask about our products, services, or company information, use the knowledge base to provide accurate details about signs, mountings, materials, installation, etc.
 
 Conversation Guidelines:
-- Be warm, professional, and engaging—make the client feel valued and use slang words from knowledgebase wherever appropriate.
-- Follow the natural flow of conversation instead of sounding like a questionnaire. Pause for about two seconds after each question to keep the conversation flow natural.
+- Be warm, professional, and engaging—make the client feel valued.
 - Use active listening—acknowledge responses and build on them.
 - Handle objections smoothly—if the client is busy, offer to schedule a callback.
 - Encourage open-ended responses—help clients share relevant details.
-- Keep the chat focused—gather necessary details efficiently.
-- Avoid saying "now", "next" word after every question.
-- If the user pauses or thinking, or uses filler words like 'uhh' or 'umm', wait quietly. Do not interrupt.
-- CRITICAL: Stick to the exact questions in the script. Do NOT ask additional questions that are not listed above.
-- CRITICAL: After logo upload, acknowledge it and move to the next step. Do NOT ask about logos again.
-- CRITICAL: Do NOT ask about colors, fonts, or styles unless specifically mentioned in the script above.
-- CRITICAL: After logo upload, move directly to the wrap-up section. Do NOT ask any additional questions.
-- CRITICAL: READ the conversation history carefully. If the customer has already provided information (size, material, location, etc.), ACKNOWLEDGE it and move to the next unanswered question.
-- CRITICAL: Do NOT repeat questions that have already been answered in the conversation.
-Conversation Flow:
+- Keep the chat focused and efficient.
 
-1. Start the conversation with the following question:
- -Ask: "To ensure we can connect if disconnected, can you please share your email address?"
- Remember the email address
- After getting the email address, ask the following question:
- -Ask: "Could you please tell me a bit about what kind of sign you're looking for — and any other details you'd like us to know?"
- Listen to the customer's response and ask the next question based on the response.    
+Email Collection Process:
+- ALWAYS ask for the customer's email address on their FIRST message, regardless of what they say.
+- Say: "Hi there! I'd be happy to help you with your sign needs. First, could you please provide your email address so I can save your information and follow up with you?"
+- Do NOT proceed with any other responses until email is collected.
+- After email is collected, ask "How can I help you with your sign needs today?"
 
-2. Gather Required Details:  
-Use the following list of questions. Ask each question naturally in a conversational tone. DO NOT MISS ANY QUESTION.
+Quote/Mockup Process:
+ONLY when a customer mentions they want a "mockup" or "quote" AND has already provided their email address, respond with:
+"I'd be happy to help you get a quote and create a mockup! I'll need to collect some specific details from you. Let me open a form for you to fill out with all the necessary information."
 
-Start the by saying: " To create an accurate mockup and quote, I just need a few more details."
-Intelligently check the details from the conversation history and ask the questions accordingly.
-Don't ask the same question again and again.
+Then trigger the quote form by including this special marker in your response: [QUOTE_FORM_TRIGGER]
 
-- Size & Dimensions:
-Ask: "What are the desired measurements for the sign?". To keep the conversation engaging and realistic, add a short two-second pause after every question.
-NOTE: If the customer mentions size in their initial description (e.g., "2 by 4 metal sign"), acknowledge this information and move to the next question.
+After Form Submission:
+- If customer says they want changes, acknowledge and let them know they can modify the form.
+- If customer says no changes needed, simply say: "Perfect! Please email your logo files to info@signize.us so our designers can work with your brand assets. We'll review your requirements and get back to you with a mockup and quote within a few hours."
 
-- Material Preference (metal, acrylic):
-Ask: "Do you have any material preferences for the sign — like metal, acrylic, or something else?"
-NOTE: If the customer mentions material in their initial description (e.g., "2 by 4 metal sign"), acknowledge this information and move to the next question.
+The form will collect:
+- Size and dimensions
+- Material preferences (metal, acrylic, etc.)
+- Illumination (with or without lighting)
+- Installation surface (brick wall, concrete, etc.)
+- City and state
+- Budget range
+- Placement (indoor/outdoor)
+- Deadlines (standard 15-17 business days, rush 12 days with 20% additional cost)
 
-- Installation Surface:  
-Ask: "Where will this sign be installed? On a brick wall, concrete, drywall, or another type of surface?"
-
-- Deadline / Installation Date:  
-Ask: "Our standard turnaround time is fifteen to seventeen business days. Do you have any deadlines or specific dates by which you need the sign to be delivered?"
-Use the current date ({{date}}) to calculate delivery dates and intelligently handle the customer as per the below scenarios.
- 
-If the customer wants it in fifteen or more business days, say: "Perfect — we'll make sure it's delivered on time."
- 
-If the customer wants it sooner than fifteen days, say: "Our minimum turnaround time is twelve business days, but that is going to cost you twenty percent additional."
-
-- Indoor or Outdoor Placement:  
-  Ask: "Is the sign going to be installed indoors or outdoors?"
-
-- City and State:
-Ask: "In which city and state do you want the sign to be delivered?"
-
-- Permit Assistance and Installation Services
-Ask: "Do you need assistance with permit and installation?
-
-- Budget Range:  
-Ask: "Do you have a price point or a budget in mind for this sign?"
-
-- Logo/Design Files:
-After discussing the budget, ask: "Do you have any existing logo files or design elements you'd like to incorporate into your sign? If so, please email them to info@signize.us so our designers can work with your brand assets."
-IMPORTANT: Move directly to the wrap-up section after asking about logos.
-CRITICAL: Do NOT ask about colors, fonts, or styles after logo question. Move directly to wrap-up.
-
-Use slang word as follows wherever you seems necessary, if the customer is professionally talking, do not use, if the conversation is casual, then use appropriate, also, be sure to acknowledge their answers positively, e.g.:
-"Hey there!", "What's up?", "Totally get it!", "No worries!", "That makes sense!", "I feel you.", "Gotcha!", "All good!", "That's pretty sweet.", "Next-level stuff.", "Just wanna double-check...", "Lemme make sure I got this right...", "Alrighty!", "Catch you later!", "Talk soon!", "Cheers!", "Thanks a ton!", "That's perfect! Thank you for clarifying that."
-
-3. Wrap-Up:
-- Briefly summarize what they shared.
-- Ask them "Any changes in the requirement?": if they say Yes, note the changes, but if they say No: Let them know our designers will create a mockup based on the gathered details.
-- Tell them they can expect the mockup very shortly.
-- Thank them warmly for their time.
+General Signage Support:
+For general questions about signs, mountings, materials, installation, etc., provide helpful information using the knowledge base. Be conversational and informative.
 
 Tone:
 - Friendly and conversational, not robotic.
 - Adjust based on how the customer responds.
-- If asked for pricing before design confirmation:  
-  "Once we finalize your design details, we'll send a personalized mockup along with pricing. Please expect the mockup within few hours."
+- Professional but approachable.
 
 Edge Cases & Objection Handling:
 
-If they ask for pricing before confirming details:
-"Pricing depends on the size, material, and customization, so once we finalize these details, our team will contact you with a mockup and can provide you with an accurate estimate."
+If they ask for pricing before getting a quote:
+"Pricing depends on the size, material, and customization. Would you like me to help you get a quote? I can collect your requirements and provide you with an accurate estimate."
 
-If they are unsure about a detail:
-"No worries! We can provide recommendations based on your needs." """
+If they are unsure about details:
+"No worries! I can help you figure out what would work best for your needs. Let me know what you're looking for and I'll guide you through the options." """
 
 def save_session_to_sheets(session_id, email, chat_history, update_existing=False):
     """Save session data to Google Sheets - one row per session with full conversation"""
@@ -298,71 +259,7 @@ def save_session_locally(session_id, chat_history):
         print("❌ Local save failed:", str(e))
         return None
 
-def generate_conversation_summary(client, messages):
-    """Generate a summary of the conversation using LLM"""
-    try:
-        if not messages:
-            return ""
-        
-        # Create summary prompt
-        summary_prompt = f"""
-        Analyze the following conversation and extract key information about the customer's sign requirements.
-        
-        INFORMATION TO EXTRACT:
-        - Size and dimensions mentioned (e.g., "2 by 4 feet", "5x3", etc.)
-        - Material preferences (e.g., "metal", "acrylic", "aluminum", etc.)
-        - Installation surface (e.g., "brick wall", "concrete", "drywall", etc.)
-        - Timeline/deadline (e.g., "in 90 days", "next month", etc.)
-        - Indoor/outdoor placement
-        - Location (city/state)
-        - Budget information (e.g., "$1000", "around $500", etc.)
-        - Email address
-        - Logo files uploaded
-        
-        FORMAT YOUR RESPONSE AS:
-        ✅ COLLECTED INFORMATION:
-        - Size: [what was mentioned]
-        - Material: [what was mentioned]
-        - Installation: [what was mentioned]
-        - Timeline: [what was mentioned]
-        - Placement: [what was mentioned]
-        - Location: [what was mentioned]
-        - Budget: [what was mentioned]
-        - Email: [what was mentioned]
-        - Logos: [what was uploaded]
-        
-        ❌ STILL NEEDED:
-        - [List specific questions that still need to be asked]
-        
-        Conversation:
-        """
-        
-        for msg in messages:
-            summary_prompt += f"\n{msg['role'].capitalize()}: {msg['content']}"
-        
-        summary_prompt += "\n\nProvide a structured summary following the format above:"
-        
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You are a helpful assistant that summarizes customer requirements from conversations. Be very specific about what information has been collected and what still needs to be gathered. Use the exact format requested."
-                },
-                {
-                    "role": "user",
-                    "content": summary_prompt
-                }
-            ],
-            max_tokens=400,
-            temperature=0.0
-        )
-        
-        return response.choices[0].message.content.strip()
-        
-    except Exception as e:
-        print(f"❌ Summary generation failed: {e}")
-        return ""
+# REMOVED: generate_conversation_summary function - not needed
 
 def validate_email(email):
     """Validate email format"""
@@ -409,11 +306,13 @@ def chat():
     })
 
     try:
-        # Generate conversation summary for context
-        conversation_summary = generate_conversation_summary(client, chat_sessions[session_id]["messages"][:-1])
-        
         # Generate response using the Sign-nize system prompt with context
-        response = generate_sign_nize_response(client, user_message, chat_sessions[session_id], conversation_summary)
+        response = generate_sign_nize_response(client, user_message, chat_sessions[session_id])
+        
+        # Check if response contains quote form trigger
+        quote_form_triggered = "[QUOTE_FORM_TRIGGER]" in response
+        if quote_form_triggered:
+            response = response.replace("[QUOTE_FORM_TRIGGER]", "")
         
         # Add assistant response to session history
         chat_sessions[session_id]["messages"].append({
@@ -448,14 +347,14 @@ def chat():
             "message": response,
             "session_id": session_id,
             "message_count": len(chat_sessions[session_id]["messages"]),
-            "conversation_summary": conversation_summary
+            "quote_form_triggered": quote_form_triggered
         })
         
     except Exception as e:
         print("Error in generate_sign_nize_response:", str(e))
         return jsonify({"message": f"Sorry, I encountered an error. Please try again."}), 500
 
-def generate_sign_nize_response(client, user_message, session_data, conversation_summary=""):
+def generate_sign_nize_response(client, user_message, session_data):
     """
     Generate response using the Sign-nize customer support system prompt with context awareness
     """
@@ -471,26 +370,23 @@ def generate_sign_nize_response(client, user_message, session_data, conversation
             role = "User" if msg["role"] == "user" else "Assistant"
             conversation_context += f"{role}: {msg['content']}\n"
     
-    # Add conversation summary and critical instructions
-    context_info = ""
-    if conversation_summary:
-        context_info = f"\n\nCONVERSATION SUMMARY (What we know so far):\n{conversation_summary}"
-    
     # Add critical instructions for context awareness
     context_instructions = """
     
 CRITICAL CONTEXT INSTRUCTIONS:
 1. CAREFULLY READ the full conversation history above.
-2. If the customer has already provided information (size, material, location, etc.), ACKNOWLEDGE it and move to the next unanswered question.
-3. Do NOT ask questions that have already been answered.
-4. Use the current date: """ + current_date + """ when discussing deadlines.
-5. If the customer says "2 by 4 metal sign", you already know the size and material - acknowledge this and ask the next question.
-6. Focus only on gathering the remaining information that hasn't been provided yet.
-7. Be specific about what information you already have and what you still need.
+2. CRITICAL: If this is the customer's FIRST message and they haven't provided their email yet, ALWAYS ask for their email first before responding to anything else.
+3. IMPORTANT: If the customer has already provided their email address in the conversation, do NOT ask for it again.
+4. IMPORTANT: If the customer mentions wanting a quote/mockup and has already provided their email, trigger the quote form with [QUOTE_FORM_TRIGGER].
+5. CRITICAL: After email collection, ask "How can I help you with your sign needs today?" and wait for their response.
+6. CRITICAL: Do NOT proactively ask about quotes/mockups - only respond to general queries until they specifically ask for quote/mockup.
+7. CRITICAL: After form submission, if customer says "no changes" or similar, simply tell them to email logo to info@signize.us.
+8. CRITICAL: If customer wants changes after form submission, trigger the quote form with [QUOTE_FORM_TRIGGER] so they can modify their details.
+9. CRITICAL: Keywords that indicate customer wants changes: "make changes", "update", "modify", "change", "edit", "revise", "adjust" - trigger form with [QUOTE_FORM_TRIGGER].
 """
     
     # Combine all context
-    full_prompt = system_prompt + context_info + context_instructions + conversation_context + f"\n\nCurrent User Message: {user_message}"
+    full_prompt = system_prompt + context_instructions + conversation_context + f"\n\nCurrent User Message: {user_message}"
     
     response = client.chat.completions.create(
         model="gpt-4o-mini",
@@ -771,6 +667,124 @@ def chat_session_tool():
     
     result = manage_chat_session(session_id, action, data.get("data"))
     return jsonify(result)
+
+# Route to save quote form data
+@app.route("/save-quote", methods=["POST"])
+def save_quote():
+    print(">>> Save quote endpoint hit")
+    data = request.json
+    session_id = data.get("session_id")
+    email = data.get("email")
+    form_data = data.get("form_data")
+    
+    if not session_id or not email or not form_data:
+        return jsonify({"error": "Session ID, email, and form data are required"}), 400
+    
+    try:
+        result = mongodb_manager.save_quote_data(session_id, email, form_data)
+        if result["success"]:
+            return jsonify({
+                "success": True,
+                "message": f"Quote data {result['action']} successfully",
+                "quote_id": result.get("quote_id")
+            })
+        else:
+            return jsonify({"error": result["error"]}), 500
+    except Exception as e:
+        return jsonify({"error": f"Failed to save quote: {str(e)}"}), 500
+
+# Route to get quote data for a session
+@app.route("/get-quote/<session_id>", methods=["GET"])
+def get_quote(session_id):
+    print(f">>> Get quote endpoint hit for session {session_id}")
+    
+    try:
+        result = mongodb_manager.get_quote_data(session_id)
+        if result["success"]:
+            return jsonify(result["quote"])
+        else:
+            # Return empty data instead of 404 when no quote exists yet
+            return jsonify({"form_data": {}})
+    except Exception as e:
+        return jsonify({"error": f"Failed to get quote: {str(e)}"}), 500
+
+# Route to get all quotes (admin)
+@app.route("/admin/quotes", methods=["GET"])
+def get_all_quotes():
+    print(">>> Get all quotes endpoint hit")
+    
+    try:
+        result = mongodb_manager.get_all_quotes()
+        if result["success"]:
+            return jsonify({"quotes": result["quotes"]})
+        else:
+            return jsonify({"error": result["error"]}), 500
+    except Exception as e:
+        return jsonify({"error": f"Failed to get quotes: {str(e)}"}), 500
+
+# Route to upload logo files
+@app.route("/upload-logo", methods=["POST"])
+def upload_logo():
+    print(">>> Upload logo endpoint hit")
+    
+    if 'logo' not in request.files:
+        return jsonify({"success": False, "message": "No logo file provided"}), 400
+    
+    file = request.files['logo']
+    session_id = request.form.get('session_id')
+    
+    if file.filename == '':
+        return jsonify({"success": False, "message": "No file selected"}), 400
+    
+    if not session_id:
+        return jsonify({"success": False, "message": "Session ID required"}), 400
+    
+    try:
+        # Create logos directory if it doesn't exist
+        logos_dir = os.path.join('data', 'logos', session_id)
+        os.makedirs(logos_dir, exist_ok=True)
+        
+        # Save the file
+        filename = f"logo_{int(time.time())}_{file.filename}"
+        file_path = os.path.join(logos_dir, filename)
+        file.save(file_path)
+        
+        # For now, just return success (in a real app, you'd store this in a database)
+        return jsonify({
+            "success": True,
+            "message": f"Logo uploaded successfully: {filename}",
+            "logo_count": 1  # This would be dynamic in a real implementation
+        })
+        
+    except Exception as e:
+        return jsonify({"success": False, "message": f"Upload failed: {str(e)}"}), 500
+
+# Route to get logos for a session
+@app.route("/session/<session_id>/logos", methods=["GET"])
+def get_session_logos(session_id):
+    print(f">>> Get logos endpoint hit for session {session_id}")
+    
+    try:
+        logos_dir = os.path.join('data', 'logos', session_id)
+        if os.path.exists(logos_dir):
+            logos = []
+            for filename in os.listdir(logos_dir):
+                if filename.startswith('logo_'):
+                    logos.append({
+                        "filename": filename,
+                        "public_url": f"/logos/{session_id}/{filename}"
+                    })
+            return jsonify({"logos": logos})
+        else:
+            return jsonify({"logos": []})
+    except Exception as e:
+        return jsonify({"error": f"Failed to get logos: {str(e)}"}), 500
+
+# Route to serve uploaded logo files
+@app.route("/logos/<session_id>/<filename>")
+def serve_logo(session_id, filename):
+    logos_dir = os.path.join('data', 'logos', session_id)
+    return send_from_directory(logos_dir, filename)
 
 # Run the Flask app
 if __name__ == "__main__":
